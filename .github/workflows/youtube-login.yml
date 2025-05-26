@@ -30,7 +30,7 @@ jobs:
     
     - name: Install dependencies
       run: |
-        pip install playwright
+        pip install playwright requests
         playwright install chromium
     
     - name: Create login script
@@ -413,53 +413,45 @@ jobs:
           echo "No cookies.txt to display"
         fi
     
-    - name: Configure Git
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action Bot"
-    
-    - name: Pull latest changes and commit cookies
-      run: |
-        echo "🔄 Pulling latest changes..."
-        git pull origin main --rebase || git pull origin main
-        
-        # Add cookie files
-        git add cookies.txt cookies.json login_status.json
-        
-        # Check if there are changes to commit
-        if git diff --staged --quiet; then
-          echo "📝 No changes to commit"
-        else
-          # Commit with timestamp
-          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          git commit -m "🍪 Update YouTube cookies - $TIMESTAMP"
-          
-          # Push to repository with retry
-          echo "📤 Pushing to repository..."
-          for i in {1..3}; do
-            if git push origin main; then
-              echo "✅ Successfully pushed cookies to repository"
-              break
-            else
-              echo "⚠️  Push attempt $i failed, retrying in 5 seconds..."
-              sleep 5
-              git pull origin main --rebase || git pull origin main
-            fi
-          done
-        fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Upload cookies as artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: youtube-cookies-${{ github.run_number }}
-        path: |
-          cookies.txt
-          cookies.json
-          login_status.json
-        retention-days: 30
+    - name: Upload cookies to File2Link
       if: always()
+      run: |
+        echo "📤 Uploading cookie files to File2Link..."
+        
+        # Function to upload file and get URL
+        upload_file() {
+          local file=$1
+          local response=$(curl -s -X POST \
+            https://file2link-tm3r.onrender.com/upload \
+            -H 'Content-Type: multipart/form-data' \
+            -F "file=@$file")
+          
+          echo "$response"
+        }
+        
+        # Upload cookies.txt
+        if [ -f "cookies.txt" ]; then
+          echo "Uploading cookies.txt..."
+          TXT_RESPONSE=$(upload_file "cookies.txt")
+          echo "cookies.txt URL: $TXT_RESPONSE"
+          echo "cookies_txt_url=$TXT_RESPONSE" >> $GITHUB_OUTPUT
+        fi
+        
+        # Upload cookies.json
+        if [ -f "cookies.json" ]; then
+          echo "Uploading cookies.json..."
+          JSON_RESPONSE=$(upload_file "cookies.json")
+          echo "cookies.json URL: $JSON_RESPONSE"
+          echo "cookies_json_url=$JSON_RESPONSE" >> $GITHUB_OUTPUT
+        fi
+        
+        # Upload login_status.json
+        if [ -f "login_status.json" ]; then
+          echo "Uploading login_status.json..."
+          STATUS_RESPONSE=$(upload_file "login_status.json")
+          echo "login_status.json URL: $STATUS_RESPONSE"
+          echo "login_status_url=$STATUS_RESPONSE" >> $GITHUB_OUTPUT
+        fi
     
     - name: Final status report
       if: always()
@@ -483,6 +475,10 @@ jobs:
             echo "✅ Cookies generated"
             if [ -f "cookies.txt" ] && [ -f "cookies.json" ]; then
               echo "✅ All cookie files present"
+              echo "📤 Cookie files uploaded to File2Link:"
+              echo "   - cookies.txt: ${{ steps.upload.outputs.cookies_txt_url }}"
+              echo "   - cookies.json: ${{ steps.upload.outputs.cookies_json_url }}"
+              echo "   - login_status.json: ${{ steps.upload.outputs.login_status_url }}"
             else
               echo "⚠️  Some cookie files missing"
             fi
